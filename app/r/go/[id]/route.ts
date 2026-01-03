@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 
 export async function GET(
   request: Request,
-  ctx: { params: Promise<{ id: string }> }
+  { params }: { params: { id: string } }
 ) {
-  const { id } = await ctx.params;
+  const { id } = params;
 
-  return NextResponse.redirect(new URL(`/product/${id}`, request.url));
+  return NextResponse.redirect(
+    new URL(`/product/${id}`, request.url)
+  );
 }
