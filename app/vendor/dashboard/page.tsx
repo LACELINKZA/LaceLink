@@ -178,14 +178,20 @@ export default function VendorDashboardPage() {
             <div className="mb-2 font-semibold text-slate-800">Upload product images</div>
             <UploadDropzone
               endpoint="productImages"
-              onClientUploadComplete={(res) => {
-                const urls = res?.map((f) => f.url) || [];
-                setImageUrls((prev) => [...prev, ...urls]);
-              }}
-              onUploadError={(error: Error) => setProductMsg(`❌ Upload error: ${error.message}`)}
-            />
-          </div>
+              onClientUploadComplete={(res: any) => {
+                const urls = (res ?? [])
+                  .map((f: any) => f?.url)
+                  .filter(Boolean);
 
+    setVerificationDocUrls((prev: string[]) => [
+      ...prev,
+      ...urls,
+    ]);
+  }}
+  onUploadError={(error: Error) => {
+    setVerifyMsg(`❌ Upload error: ${error.message}`);
+  }}
+/>
           <div className="mt-6">
             <div className="mb-2 font-semibold text-slate-800">Affiliate links (optional)</div>
 
