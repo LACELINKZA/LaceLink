@@ -241,10 +241,10 @@ export default function VendorDashboardPage() {
             <div className="mb-2 font-semibold text-slate-800">Upload verification docs</div>
             <UploadDropzone
               endpoint="verificationDocs"
-              onClientUploadComplete={(res) => {
+              onClientUploadComplete={(res: any) => {
                 const urls = res?.map((f) => f.url) || [];
                 setVerificationDocUrls((prev) => [...prev, ...urls]);
-              }}
+              }
               onUploadError={(error: Error) => setVerifyMsg(`❌ Upload error: ${error.message}`)}
             />
           </div>
