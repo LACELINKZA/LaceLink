@@ -1,6 +1,4 @@
 import { createUploadthing, type FileRouter } from "uploadthing/next";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 
 const f = createUploadthing();
 
@@ -12,18 +10,11 @@ export const uploadRouter = {
     },
   })
     .middleware(async () => {
-      const session = await getServerSession(authOptions);
-
-      if (!session?.user?.email) {
-        throw new Error("Unauthorized");
-      }
-
-      return { userEmail: session.user.email };
+      // No auth yet — allow uploads for now
+      return {};
     })
-    .onUploadComplete(async ({ metadata }) => {
-      return {
-        uploadedBy: metadata.userEmail,
-      };
+    .onUploadComplete(async () => {
+      return { ok: true };
     }),
 } satisfies FileRouter;
 
