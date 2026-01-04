@@ -1,12 +1,9 @@
 type PageProps = {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 };
 
 export default async function ProductPage({ params }: PageProps) {
-  const id = params.id;
-
-  // example fetch (replace with your real fetch)
-  // const product = await getProduct(id);
+  const { id } = await params;
 
   return (
     <main style={{ padding: 24 }}>
