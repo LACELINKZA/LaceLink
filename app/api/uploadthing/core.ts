@@ -1,21 +1,22 @@
-import { createUploadthing, type FileRouter } from "uploadthing/next";
+import { createUploadthing, type FileRouter } from "uploadthing/next"
 
-const f = createUploadthing();
+const f = createUploadthing()
 
-export const uploadRouter = {
+export const ourFileRouter = {
   verificationDocs: f({
-    image: {
-      maxFileSize: "8MB",
-      maxFileCount: 6,
-    },
+    image: { maxFileSize: "8MB", maxFileCount: 6 },
   })
     .middleware(async () => {
-      // No auth yet — allow uploads for now
-      return {};
+    
+      return { userId: "anonymous" }
     })
-    .onUploadComplete(async () => {
-      return { ok: true };
+    .onUploadComplete(async ({ metadata, file }) => {
+    
+      return { ok: true, uploadedBy: metadata.userId, url: file.url }
     }),
-} satisfies FileRouter;
+} satisfies FileRouter
 
-export type UploadRouter = typeof uploadRouter;
+export type UploadRouter = typeof ourFileRouter
+export type AppFileRouter = typeof ourFileRouter
+
+export const uploadRouter = ourFileRouter
