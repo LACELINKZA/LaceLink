@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { productsSeed } from "@/lib/productsSeed"
+import { productsSeed } from "../../lib/productsSeed"
 
 export default function ShopPage() {
   return (
