@@ -1,5 +1,5 @@
-import { generateReactHelpers } from "@uploadthing/react";
-import type { AppFileRouter } from "@/app/api/uploadthing/core";
+import type { AppFileRouter } from "@/app/api/uploadthing/core"
+import { generateUploadButton, generateUploadDropzone } from "@uploadthing/react"
 
-export const { UploadButton, UploadDropzone } =
-  generateReactHelpers<AppFileRouter>();
+export const UploadButton = generateUploadButton<AppFileRouter>()
+export const UploadDropzone = generateUploadDropzone<AppFileRouter>()
