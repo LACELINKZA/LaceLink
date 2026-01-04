@@ -1,273 +1,141 @@
-"use client";
+"use client"
 
-import { useMemo, useState } from "react";
-import AppHeader from "@/components/AppHeader";
-import { useMe } from "@/lib/useMe";
-import { UploadDropzone } from "@/lib/uploadthing";
+import { useState } from "react"
 
-type AffiliateLinkInput = { label: string; url: string; provider?: string };
+export default function VendorDashboard() {
+  // Form fields
+  const [storeName, setStoreName] = useState("")
+  const [website, setWebsite] = useState("")
+  const [bio, setBio] = useState("")
 
-export default function VendorDashboardPage() {
-  const { isAuthed, role } = useMe();
+  // UI state
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const [storeName, setStoreName] = useState("");
-  const [website, setWebsite] = useState("");
-  const [bio, setBio] = useState("");
-  const [onboardMsg, setOnboardMsg] = useState("");
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setMessage(null)
+    setError(null)
 
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("Lace Front");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
-  const [fastShipping, setFastShipping] = useState(false);
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
-  const [affiliateLinks, setAffiliateLinks] = useState<AffiliateLinkInput[]>([
-    { label: "Amazon", url: "", provider: "Amazon" },
-  ]);
-  const [productMsg, setProductMsg] = useState("");
+    if (!storeName.trim()) {
+      setError("Store name is required.")
+      return
+    }
 
-  const [verificationDocUrls, setVerificationDocUrls] = useState<string[]>([]);
-  const [verificationNotes, setVerificationNotes] = useState("");
-  const [verifyMsg, setVerifyMsg] = useState("");
+    try {
+      setSaving(true)
 
-  const canUseVendor = isAuthed && (role === "VENDOR" || role === "ADMIN");
+      // For now we’ll just “pretend” to save.
+      // (Later we can connect this to a real API route / database.)
+      await new Promise((r) => setTimeout(r, 700))
 
-  const validAffiliateLinks = useMemo(
-    () => affiliateLinks.filter((l) => l.label.trim() && l.url.trim()),
-    [affiliateLinks]
-  );
+      setMessage("Saved! Your vendor profile has been updated.")
+    } catch (err) {
+      setError("Something went wrong while saving. Try again.")
+    } finally {
+      setSaving(false)
+    }
+  }
 
-  async function onboard() {
-    setOnboardMsg("");
-    const res = await fetch("/api/vendor/onboard", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ storeName, website, bio }),
-    });
-    const data = await res.json();
-    if (!res.ok) setOnboardMsg(`❌ ${data?.error || "Onboarding failed"}`);
-    else setOnboardMsg("✅ Vendor profile saved. You can upload products now.");
-  }
+  return (
+    <div className="mx-auto w-full max-w-2xl p-6">
+      <h1 className="text-2xl font-bold text-slate-900">Vendor Dashboard</h1>
+      <p className="mt-1 text-slate-600">
+        Set up your store profile so customers can trust your listings.
+      </p>
 
-  async function createProduct() {
-    setProductMsg("");
-    const priceInt = Number(price);
-    const res = await fetch("/api/vendor/products/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        description,
-        category,
-        price: Number.isInteger(priceInt) ? priceInt : Math.round(priceInt),
-        fastShipping,
-        imageUrls,
-        affiliateLinks: validAffiliateLinks,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) setProductMsg(`❌ ${data?.error || "Create product failed"}`);
-    else {
-      setProductMsg("✅ Product created!");
-      setName("");
-      setDescription("");
-      setPrice("");
-      setFastShipping(false);
-      setImageUrls([]);
-      setAffiliateLinks([{ label: "Amazon", url: "", provider: "Amazon" }]);
-    }
-  }
+      <form
+        onSubmit={handleSubmit}
+        className="mt-6 rounded-2xl border border-sky-200 bg-white/70 p-6 shadow-sm backdrop-blur"
+      >
+        <h2 className="text-xl font-semibold text-slate-800">
+          Vendor Verification
+        </h2>
+        <p className="mt-1 text-slate-600">
+          Upload docs and submit for review (we’ll add uploads next).
+        </p>
 
-  async function applyVerification() {
-    setVerifyMsg("");
-    const res = await fetch("/api/vendor/verification/apply", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        notes: verificationNotes,
-        docImageUrls: verificationDocUrls,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) setVerifyMsg(`❌ ${data?.error || "Apply failed"}`);
-    else setVerifyMsg("✅ Verification request submitted (PENDING).");
-  }
+        {/* Alerts */}
+        {error && (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+        {message && (
+          <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+            {message}
+          </div>
+        )}
 
-  if (!isAuthed) {
-    return (
-      <main className="min-h-screen bg-[#eef6ff]">
-        <AppHeader />
-        <div className="mx-auto max-w-3xl px-4 py-10">
-          <div className="rounded-2xl border border-sky-200 bg-white/70 p-8 text-slate-700">
-            Please <a className="text-sky-700 underline" href="/auth/signin">sign in</a>.
-          </div>
-        </div>
-      </main>
-    );
-  }
+        {/* Store Name */}
+        <div className="mt-5">
+          <label className="text-sm font-medium text-slate-700">
+            Store Name <span className="text-red-500">*</span>
+          </label>
+          <input
+            value={storeName}
+            onChange={(e) => setStoreName(e.target.value)}
+            placeholder="e.g. LaceLink Beauty"
+            className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none focus:border-sky-400"
+          />
+        </div>
 
-  if (!canUseVendor) {
-    return (
-      <main className="min-h-screen bg-[#eef6ff]">
-        <AppHeader />
-        <div className="mx-auto max-w-3xl px-4 py-10">
-          <div className="rounded-2xl border border-sky-200 bg-white/70 p-8 text-slate-700">
-            You’re signed in, but not a vendor yet. Fill out Vendor Profile below to become a vendor.
-          </div>
-        </div>
-      </main>
-    );
-  }
+        {/* Website */}
+        <div className="mt-4">
+          <label className="text-sm font-medium text-slate-700">
+            Website (optional)
+          </label>
+          <input
+            value={website}
+            onChange={(e) => setWebsite(e.target.value)}
+            placeholder="https://yourstore.com"
+            className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none focus:border-sky-400"
+          />
+        </div>
 
-  return (
-    <main className="min-h-screen bg-[#eef6ff]">
-      <AppHeader />
+        {/* Bio */}
+        <div className="mt-4">
+          <label className="text-sm font-medium text-slate-700">
+            Store Bio (optional)
+          </label>
+          <textarea
+            value={bio}
+            onChange={(e) => setBio(e.target.value)}
+            placeholder="Tell customers what you specialize in..."
+            rows={4}
+            className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none focus:border-sky-400"
+          />
+          <p className="mt-2 text-xs text-slate-500">
+            Tip: Mention shipping time, hair type options, and your return policy.
+          </p>
+        </div>
 
-      <div className="mx-auto max-w-6xl px-4 py-10">
-        <h1 className="text-4xl font-extrabold text-sky-700">Vendor Dashboard</h1>
-        <p className="mt-2 text-slate-700">Onboard, upload products, and apply for verification.</p>
+        {/* Buttons */}
+        <div className="mt-6 flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-xl bg-sky-600 px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          >
+            {saving ? "Saving..." : "Save Profile"}
+          </button>
 
-        <section className="mt-8 rounded-2xl border border-sky-200 bg-white/70 p-6 shadow-sm backdrop-blur">
-          <h2 className="text-xl font-bold text-slate-800">Vendor Profile</h2>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <input value={storeName} onChange={(e) => setStoreName(e.target.value)} placeholder="Store name"
-              className="rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200" />
-            <input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="Website (optional)"
-              className="rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200" />
-            <textarea value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Bio (optional)"
-              className="min-h-[90px] rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200 md:col-span-2" />
-          </div>
-
-          <button onClick={onboard}
-            className="mt-4 rounded-xl bg-sky-500 px-5 py-3 font-semibold text-white hover:bg-sky-600">
-            Save vendor profile
-          </button>
-
-          {onboardMsg && (
-            <div className="mt-4 rounded-xl border border-sky-200 bg-white p-3 text-slate-700">{onboardMsg}</div>
-          )}
-        </section>
-
-        <section className="mt-8 rounded-2xl border border-sky-200 bg-white/70 p-6 shadow-sm backdrop-blur">
-          <h2 className="text-xl font-bold text-slate-800">Create a Product</h2>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Wig name"
-              className="rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200" />
-            <select value={category} onChange={(e) => setCategory(e.target.value)}
-              className="rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200">
-              {["Lace Front", "HD Lace", "Bobs", "Glueless", "Custom Units"].map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-
-            <input value={price} onChange={(e) => setPrice(e.target.value)} inputMode="numeric" placeholder="Price (USD)"
-              className="rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200" />
-
-            <label className="flex items-center gap-2 rounded-xl border border-sky-200 bg-white px-4 py-3 text-slate-700">
-              <input type="checkbox" checked={fastShipping} onChange={(e) => setFastShipping(e.target.checked)} className="h-4 w-4" />
-              Fast shipping (≤ 3 days)
-            </label>
-
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Description (optional)"
-              className="min-h-[90px] rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200 md:col-span-2" />
-          </div>
-
-          <div className="mt-5">
-            <div className="mb-2 font-semibold text-slate-800">Upload product images</div>
-            <UploadDropzone
-              endpoint="productImages"
-              onClientUploadComplete={(res: any) => {
-                const urls = (res ?? [])
-                  .map((f: any) => f?.url)
-                  .filter(Boolean);
-
-    setVerificationDocUrls((prev: string[]) => [
-      ...prev,
-      ...urls,
-    ]);
-  }}
-  onUploadError={(error: Error) => {
-    setVerifyMsg(`❌ Upload error: ${error.message}`);
-  }}
-/>
-          <div className="mt-6">
-            <div className="mb-2 font-semibold text-slate-800">Affiliate links (optional)</div>
-
-            <div className="grid gap-3">
-              {affiliateLinks.map((l, idx) => (
-                <div key={idx} className="grid gap-3 md:grid-cols-3">
-                  <input value={l.label} onChange={(e) => {
-                    const v = e.target.value;
-                    setAffiliateLinks((prev) => prev.map((x, i) => (i === idx ? { ...x, label: v } : x)));
-                  }} placeholder="Label (Amazon / Vendor site)"
-                    className="rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200" />
-                  <input value={l.provider || ""} onChange={(e) => {
-                    const v = e.target.value;
-                    setAffiliateLinks((prev) => prev.map((x, i) => (i === idx ? { ...x, provider: v } : x)));
-                  }} placeholder="Provider (optional)"
-                    className="rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200" />
-                  <input value={l.url} onChange={(e) => {
-                    const v = e.target.value;
-                    setAffiliateLinks((prev) => prev.map((x, i) => (i === idx ? { ...x, url: v } : x)));
-                  }} placeholder="https://..."
-                    className="rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200" />
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-3 flex gap-2">
-              <button onClick={() => setAffiliateLinks((p) => [...p, { label: "", url: "" }])}
-                className="rounded-xl border border-sky-200 bg-white px-4 py-2 font-semibold text-sky-700">
-                + Add link
-              </button>
-              <button onClick={() => setAffiliateLinks((p) => p.slice(0, Math.max(1, p.length - 1)))}
-                className="rounded-xl border border-sky-200 bg-white px-4 py-2 font-semibold text-sky-700">
-                Remove last
-              </button>
-            </div>
-          </div>
-
-          <button onClick={createProduct}
-            className="mt-6 w-full rounded-xl bg-sky-500 px-4 py-3 font-semibold text-white hover:bg-sky-600">
-            Create product
-          </button>
-
-          {productMsg && (
-            <div className="mt-4 rounded-xl border border-sky-200 bg-white p-3 text-slate-700">{productMsg}</div>
-          )}
-        </section>
-
-        <section className="mt-8 rounded-2xl border border-sky-200 bg-white/70 p-6 shadow-sm backdrop-blur">
-          <h2 className="text-xl font-bold text-slate-800">Vendor Verification</h2>
-          <p className="mt-2 text-slate-700">Upload docs and submit for review.</p>
-
-          <div className="mt-4">
-            <div className="mb-2 font-semibold text-slate-800">Upload verification docs</div>
-            <UploadDropzone
-              endpoint="verificationDocs"
-              onClientUploadComplete={(res: any) => {
-                const urls = res?.map((f) => f.url) || [];
-                setVerificationDocUrls((prev) => [...prev, ...urls]);
-              }
-              onUploadError={(error: Error) => setVerifyMsg(`❌ Upload error: ${error.message}`)}
-            />
-          </div>
-
-          <textarea value={verificationNotes} onChange={(e) => setVerificationNotes(e.target.value)} placeholder="Notes for admin (optional)"
-            className="mt-4 min-h-[90px] w-full rounded-xl border border-sky-200 bg-white px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200" />
-
-          <button onClick={applyVerification}
-            className="mt-4 rounded-xl bg-sky-500 px-5 py-3 font-semibold text-white hover:bg-sky-600">
-            Submit verification request
-          </button>
-
-          {verifyMsg && (
-            <div className="mt-4 rounded-xl border border-sky-200 bg-white p-3 text-slate-700">{verifyMsg}</div>
-          )}
-        </section>
-      </div>
-    </main>
-  );
+          <button
+            type="button"
+            onClick={() => {
+              setStoreName("")
+              setWebsite("")
+              setBio("")
+              setMessage(null)
+              setError(null)
+            }}
+            className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700"
+          >
+            Clear
+          </button>
+        </div>
+      </form>
+    </div>
+  )
 }
