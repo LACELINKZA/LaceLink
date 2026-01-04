@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const stripe = new Stripe(stripeKey, { apiVersion: "2024-06-20" });
+  const stripe = new Stripe(stripeKey, { apiVersion: "2023-10-16" });
 
   const form = await req.formData();
   const productId = String(form.get("productId") || "");
