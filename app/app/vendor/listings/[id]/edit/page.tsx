@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-
-type PageProps = { params: { id: string } };
 
 type Listing = {
   id: string;
@@ -21,21 +19,8 @@ type ListingImage = {
   id: string;
   image_url: string;
   sort_order: number;
+  created_at?: string;
 };
-
-function formatMoney(priceCents: number, currency: string) {
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(
-      priceCents / 100
-    );
-  } catch {
-    return `$${(priceCents / 100).toFixed(2)}`;
-  }
-}
-
-function centsToDollars(cents: number) {
-  return (cents / 100).toFixed(2);
-}
 
 function dollarsToCents(v: string) {
   const n = Number(v);
@@ -43,9 +28,24 @@ function dollarsToCents(v: string) {
   return Math.round(n * 100);
 }
 
-export default function EditListingPage({ params }: PageProps) {
+function centsToDollars(cents: number) {
+  return (cents / 100).toFixed(2);
+}
+
+function formatMoney(cents: number, currency: string) {
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(
+      cents / 100
+    );
+  } catch {
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+}
+
+export default function EditListingPage() {
   const router = useRouter();
-  const listingId = params.id;
+  const params = useParams<{ id: string }>();
+  const listingId = params?.id;
 
   const [listing, setListing] = useState<Listing | null>(null);
   const [images, setImages] = useState<ListingImage[]>([]);
@@ -55,16 +55,18 @@ export default function EditListingPage({ params }: PageProps) {
   // form state
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
+  const [price, setPrice] = useState("0.00");
   const [currency, setCurrency] = useState("USD");
   const [isActive, setIsActive] = useState(true);
 
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const cover = useMemo(() => images?.[0]?.image_url || "", [images]);
+  const coverUrl = useMemo(() => images?.[0]?.image_url || "", [images]);
 
-  async function load() {
+  async function loadAll() {
+    if (!listingId) return;
+
     setLoading(true);
     setStatus("");
 
@@ -78,8 +80,9 @@ export default function EditListingPage({ params }: PageProps) {
       setLoading(false);
       return;
     }
+
     if (!user) {
-      setStatus("Please sign in.");
+      setStatus("Please sign in to edit listings.");
       setLoading(false);
       return;
     }
@@ -95,22 +98,23 @@ export default function EditListingPage({ params }: PageProps) {
       setLoading(false);
       return;
     }
+
     if (!l) {
       setStatus("Listing not found.");
       setLoading(false);
       return;
     }
 
-    // Security: ensure vendor owns listing (RLS should handle too, but UX matters)
+    // Ensure only owner can edit (RLS should enforce too, but this is a better UX)
     if (l.vendor_id !== user.id) {
-      setStatus("You don't have access to edit this listing.");
+      setStatus("You don’t have permission to edit this listing.");
       setLoading(false);
       return;
     }
 
     const { data: imgs, error: imgErr } = await supabase
       .from("listing_images")
-      .select("id, image_url, sort_order")
+      .select("id, image_url, sort_order, created_at")
       .eq("listing_id", listingId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
@@ -134,17 +138,24 @@ export default function EditListingPage({ params }: PageProps) {
   }
 
   useEffect(() => {
-    load();
+    if (!listingId) return;
+    loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listingId]);
 
   async function saveChanges() {
-    if (!listing) return;
+    if (!listingId || !listing) return;
 
     setSaving(true);
     setStatus("");
 
     const price_cents = dollarsToCents(price);
+
+    if (!title.trim()) {
+      setStatus("Title is required.");
+      setSaving(false);
+      return;
+    }
 
     const { error } = await supabase
       .from("listings")
@@ -155,7 +166,7 @@ export default function EditListingPage({ params }: PageProps) {
         currency,
         is_active: isActive,
       })
-      .eq("id", listing.id);
+      .eq("id", listingId);
 
     if (error) {
       setStatus(error.message);
@@ -167,8 +178,9 @@ export default function EditListingPage({ params }: PageProps) {
     setSaving(false);
   }
 
-  async function uploadImages(files: FileList | null) {
-    if (!files || files.length === 0) return;
+  async function uploadImages(fileList: FileList | null) {
+    if (!listingId || !fileList || fileList.length === 0) return;
+
     setUploading(true);
     setStatus("");
 
@@ -182,11 +194,10 @@ export default function EditListingPage({ params }: PageProps) {
       return;
     }
 
-    // Upload each file to storage, then insert URL into listing_images
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-
-      const safeName = file.name.replace(/\s+/g, "-");
+    // Upload each file and then save its public URL to listing_images table
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
       const path = `${user.id}/${listingId}/${Date.now()}-${safeName}`;
 
       const { error: upErr } = await supabase.storage
@@ -222,10 +233,10 @@ export default function EditListingPage({ params }: PageProps) {
 
     setStatus("Uploaded ✅");
     setUploading(false);
-    await load();
+    await loadAll();
   }
 
-  async function deleteImage(imageId: string) {
+  async function removeImage(imageId: string) {
     const ok = confirm("Remove this image?");
     if (!ok) return;
 
@@ -255,46 +266,46 @@ export default function EditListingPage({ params }: PageProps) {
 
   return (
     <main style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <h1 style={{ margin: 0 }}>Edit Listing</h1>
+
         <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
           <Link href="/vendor/listings">← Back</Link>
           <button
             onClick={() => router.push(`/shop/${listingId}`)}
             style={ghostButton}
           >
-            View Public Page
+            View Public
           </button>
         </div>
       </div>
 
-      {status ? (
-        <div style={statusBox}>{status}</div>
-      ) : null}
+      {status ? <div style={statusBox}>{status}</div> : null}
 
       <section style={{ marginTop: 16, display: "grid", gap: 12 }}>
-        {cover ? (
-          <div style={coverBox}>
-            {/* Using normal img keeps it simple for Supabase public URLs */}
+        <div style={coverBox}>
+          {coverUrl ? (
             <img
-              src={cover}
+              src={coverUrl}
               alt="Cover"
               style={{ width: "100%", height: 320, objectFit: "cover" }}
             />
-          </div>
-        ) : (
-          <div style={{ ...coverBox, display: "grid", placeItems: "center", opacity: 0.6 }}>
-            No images yet
-          </div>
-        )}
+          ) : (
+            <div style={noCover}>No images yet</div>
+          )}
+        </div>
 
         <div style={{ display: "grid", gap: 12 }}>
-          <label style={{ display: "grid", gap: 6 }}>
+          <label style={label}>
             Title
-            <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              style={inputStyle}
+            />
           </label>
 
-          <label style={{ display: "grid", gap: 6 }}>
+          <label style={label}>
             Description
             <textarea
               value={description}
@@ -305,7 +316,7 @@ export default function EditListingPage({ params }: PageProps) {
           </label>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <label style={{ display: "grid", gap: 6 }}>
+            <label style={label}>
               Price
               <input
                 value={price}
@@ -313,15 +324,18 @@ export default function EditListingPage({ params }: PageProps) {
                 inputMode="decimal"
                 style={inputStyle}
               />
-              <div style={{ opacity: 0.7, fontSize: 13 }}>
-                Preview:{" "}
-                {formatMoney(dollarsToCents(price), currency)}
+              <div style={{ fontSize: 13, opacity: 0.75, marginTop: 6 }}>
+                Preview: {formatMoney(dollarsToCents(price), currency)}
               </div>
             </label>
 
-            <label style={{ display: "grid", gap: 6 }}>
+            <label style={label}>
               Currency
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} style={inputStyle}>
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                style={inputStyle}
+              >
                 <option value="USD">USD</option>
                 <option value="CAD">CAD</option>
                 <option value="GBP">GBP</option>
@@ -372,15 +386,15 @@ export default function EditListingPage({ params }: PageProps) {
         </div>
 
         {images.length > 0 ? (
-          <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+          <div style={imageGrid}>
             {images.map((img) => (
-              <div key={img.id} style={imgCard}>
+              <div key={img.id} style={imageCard}>
                 <img
                   src={img.image_url}
-                  alt="Listing image"
+                  alt="Listing"
                   style={{ width: "100%", height: 150, objectFit: "cover", borderRadius: 12 }}
                 />
-                <button onClick={() => deleteImage(img.id)} style={smallButton}>
+                <button onClick={() => removeImage(img.id)} style={smallButton}>
                   Remove
                 </button>
               </div>
@@ -388,7 +402,7 @@ export default function EditListingPage({ params }: PageProps) {
           </div>
         ) : (
           <div style={{ marginTop: 12, opacity: 0.7 }}>
-            No images yet. Upload at least 1 photo so your listing looks legit.
+            No images yet. Upload at least 1 photo to make the listing look real.
           </div>
         )}
       </section>
@@ -404,11 +418,7 @@ const statusBox: React.CSSProperties = {
   background: "rgba(0,0,0,0.03)",
 };
 
-const coverBox: React.CSSProperties = {
-  border: "1px solid rgba(0,0,0,0.12)",
-  borderRadius: 14,
-  overflow: "hidden",
-};
+const label: React.CSSProperties = { display: "grid", gap: 6 };
 
 const inputStyle: React.CSSProperties = {
   padding: "10px 12px",
@@ -427,7 +437,7 @@ const buttonStyle: React.CSSProperties = {
   padding: "12px 14px",
   borderRadius: 12,
   border: "1px solid rgba(0,0,0,0.15)",
-  fontWeight: 700,
+  fontWeight: 800,
 };
 
 const ghostButton: React.CSSProperties = {
@@ -436,10 +446,30 @@ const ghostButton: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.15)",
   background: "transparent",
   cursor: "pointer",
-  fontWeight: 600,
+  fontWeight: 700,
 };
 
-const imgCard: React.CSSProperties = {
+const coverBox: React.CSSProperties = {
+  border: "1px solid rgba(0,0,0,0.12)",
+  borderRadius: 14,
+  overflow: "hidden",
+};
+
+const noCover: React.CSSProperties = {
+  height: 320,
+  display: "grid",
+  placeItems: "center",
+  opacity: 0.6,
+};
+
+const imageGrid: React.CSSProperties = {
+  marginTop: 14,
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+};
+
+const imageCard: React.CSSProperties = {
   border: "1px solid rgba(0,0,0,0.12)",
   borderRadius: 14,
   padding: 10,
@@ -452,5 +482,5 @@ const smallButton: React.CSSProperties = {
   borderRadius: 12,
   border: "1px solid rgba(0,0,0,0.15)",
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: 800,
 };
