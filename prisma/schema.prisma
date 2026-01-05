@@ -3,198 +3,34 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  USER
-  VENDOR
-  ADMIN
-}
-
-enum VerificationStatus {
-  NOT_APPLIED
-  PENDING
-  APPROVED
-  DENIED
-}
-
-model User {
-  id        String   @id @default(cuid())
-  name      String?
-  email     String?  @unique
-  image     String?
-  role      Role     @default(USER)
-
-  passwordHash String?
-  username     String? @unique
-
-  vendorProfile VendorProfile?
-  reviews       Review[]
-  favorites     Favorite[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  accounts Account[]
-  sessions Session[]
-}
-
-model VendorProfile {
-  id                 String @id @default(cuid())
-  userId             String @unique
-  storeName          String
-  bio                String?
-  website            String?
-  verificationStatus VerificationStatus @default(NOT_APPLIED)
-
-  products      Product[]
-  verification  VendorVerificationRequest?
-
-  user User @relation(fields: [userId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model VendorVerificationRequest {
-  id           String @id @default(cuid())
-  vendorId     String @unique
-  status       VerificationStatus @default(PENDING)
-  notes        String?
-  adminNotes   String?
-  docImageUrls String[]
-
-  vendor VendorProfile @relation(fields: [vendorId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+model Vendor {
+  id              String   @id @default(cuid())
+  email           String   @unique
+  displayName     String?
+  stripeAccountId String?  // acct_...
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 }
 
 model Product {
-  id            String  @id @default(cuid())
-  vendorId      String
-  name          String
-  description   String?
-  category      String
-  price         Int
-  fastShipping  Boolean @default(false)
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String
+  priceCents  Int
+  rating      Float
+  reviewCount Int
+  laceType    String
+  curlPattern String
+  hairType    String
+  color       String
+  vendorEmail String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  images         ProductImage[]
-  affiliateLinks AffiliateLink[]
-  reviews        Review[]
-  favorites      Favorite[]
-
-  vendor VendorProfile @relation(fields: [vendorId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-
-model ProductImage {
-  id        String @id @default(cuid())
-  productId String
-  url       String
-
-  product Product @relation(fields: [productId], references: [id])
-
-  createdAt DateTime @default(now())
-}
-
-model AffiliateLink {
-  id        String @id @default(cuid())
-  productId String
-  label     String
-  url       String
-  provider  String?
-
-  clicks AffiliateClick[]
-
-  product Product @relation(fields: [productId], references: [id])
-
-  createdAt DateTime @default(now())
-}
-
-model AffiliateClick {
-  id              String @id @default(cuid())
-  affiliateLinkId String
-  userId          String?
-  ipHash          String?
-  userAgent       String?
-
-  affiliateLink AffiliateLink @relation(fields: [affiliateLinkId], references: [id])
-
-  createdAt DateTime @default(now())
-}
-
-model Review {
-  id        String @id @default(cuid())
-  productId String
-  userId    String
-  rating    Int
-  comment   String?
-  photos    ReviewPhoto[]
-
-  product Product @relation(fields: [productId], references: [id])
-  user    User    @relation(fields: [userId], references: [id])
-
-  createdAt DateTime @default(now())
-}
-
-model ReviewPhoto {
-  id       String @id @default(cuid())
-  reviewId String
-  url      String
-
-  review Review @relation(fields: [reviewId], references: [id])
-
-  createdAt DateTime @default(now())
-}
-
-model Favorite {
-  id        String @id @default(cuid())
-  userId    String
-  productId String
-
-  user    User    @relation(fields: [userId], references: [id])
-  product Product @relation(fields: [productId], references: [id])
-
-  @@unique([userId, productId])
-}
-
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id])
-
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-
-  user User @relation(fields: [userId], references: [id])
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
+  @@index([vendorEmail])
 }

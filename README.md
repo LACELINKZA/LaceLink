@@ -1,39 +1,24 @@
-# LaceLink
+# LaceLink v5 — Stripe Connect payouts (DB-backed)
 
-A wig marketplace connecting shoppers with verified vendors and fast shipping and reliable reviews
+## Local setup
+1) Install deps
+   npm install
 
-## Features
-- Marketplace for wigs and hair units
-- Vendor onboarding and verification
-- Product uploads with pricing control
-- Reviews with photo uploads
-- Affiliate links (Amazon + vendor sites)
-- Admin dashboard for approvals
+2) Create your .env from .env.example
+   cp .env.example .env
 
-## Tech Stack
-- Next.js (App Router)
-- PostgreSQL + Prisma
-- NextAuth (Google, magic link, credentials)
-- UploadThing (image uploads)
-- Tailwind CSS
+3) Run Prisma migration (creates sqlite dev.db)
+   npm run prisma:migrate
 
-## Local Development
-1) Copy env:
-- duplicate `.env.example` -> `.env`
-- fill in DATABASE_URL + NEXTAUTH_SECRET (and optional Google/Email/UploadThing)
+4) Start dev server
+   npm run dev
 
-2) Install + migrate:
-```bash
-npm install
-npx prisma migrate dev --name init
-```
+## How payouts work
+- Vendor logs in (demo) and clicks "Connect Stripe (Get Paid)"
+- Connected account ID (acct_...) is stored in the DB (Vendor table)
+- Checkout uses destination charges:
+  - application_fee_amount = PLATFORM_FEE_CENTS
+  - transfer_data.destination = vendor.stripeAccountId
 
-3) Run:
-```bash
-npm run dev
-```
-
-## Deploy
-This project is designed to be deployed on Vercel (recommended) or any Node host with a PostgreSQL database.
-
-> Note: GitHub Pages is static hosting and does not support Next.js API routes + authentication.
+## Production note
+SQLite is for local dev. For Vercel, switch Prisma datasource provider to postgresql and set DATABASE_URL to a hosted Postgres (Neon, etc.).
