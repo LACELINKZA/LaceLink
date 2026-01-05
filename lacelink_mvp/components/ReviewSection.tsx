@@ -1,0 +1,1 @@
+export default function Reviews(){return <div>No reviews yet</div>}

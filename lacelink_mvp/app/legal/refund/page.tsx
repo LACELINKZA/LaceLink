@@ -1,0 +1,1 @@
+export default function Refund(){return <main><h1>Refund Policy</h1></main>}
