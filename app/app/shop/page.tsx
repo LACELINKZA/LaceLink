@@ -1,152 +1,111 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useMemo, useState } from "react";
+import { products } from "@/data/products";
 
-type ListingRow = {
-  id: string;
-  title: string;
-  price_cents: number;
-  currency: string;
-  is_active: boolean;
-  listing_images?: { image_url: string; sort_order: number }[];
-};
+type Sort = "price-asc" | "price-desc" | "reviews" | "rating";
 
-function formatMoney(priceCents: number, currency: string) {
-  try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(
-      priceCents / 100
-    );
-  } catch {
-    return `$${(priceCents / 100).toFixed(2)}`;
-  }
-}
+export default function Shop() {
+  const [sort, setSort] = useState<Sort>("price-asc");
+  const [minRating45, setMinRating45] = useState(false);
+  const [laceType, setLaceType] = useState("");
+  const [curlPattern, setCurlPattern] = useState("");
+  const [hairType, setHairType] = useState("");
+  const [color, setColor] = useState("");
 
-export default function ShopPage() {
-  const [items, setItems] = useState<ListingRow[]>([]);
-  const [status, setStatus] = useState("");
-  const [loading, setLoading] = useState(true);
+  const filtered = useMemo(() => {
+    return products.filter((p) => {
+      if (minRating45 && p.rating < 4.5) return false;
+      if (laceType && p.laceType !== laceType) return false;
+      if (curlPattern && p.curlPattern !== curlPattern) return false;
+      if (hairType && p.hairType !== hairType) return false;
+      if (color && p.color !== color) return false;
+      return true;
+    });
+  }, [minRating45, laceType, curlPattern, hairType, color]);
 
-  async function load() {
-    setLoading(true);
-    setStatus("");
-
-    // Public shop: show only active listings
-    const { data, error } = await supabase
-      .from("listings")
-      .select(
-        "id, title, price_cents, currency, is_active, listing_images(image_url, sort_order)"
-      )
-      .eq("is_active", true)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      setStatus(error.message);
-      setLoading(false);
-      return;
-    }
-
-    setItems((data as ListingRow[]) ?? []);
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
+  const sorted = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      if (sort === "price-asc") return a.priceCents - b.priceCents;
+      if (sort === "price-desc") return b.priceCents - a.priceCents;
+      if (sort === "reviews") return b.reviewCount - a.reviewCount;
+      if (sort === "rating") return b.rating - a.rating;
+      return 0;
+    });
+    return arr;
+  }, [filtered, sort]);
 
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto", padding: 24 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <h1 style={{ margin: 0 }}>Shop</h1>
-        <div style={{ marginLeft: "auto" }}>
-          <Link href="/vendor/listings" style={{ textDecoration: "none" }}>
-            Vendor Dashboard →
-          </Link>
+    <main className="container">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <h1>Shop</h1>
+        <select className="select" value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
+          <option value="price-asc">Sort by: Price Low → High</option>
+          <option value="price-desc">Sort by: Price High → Low</option>
+          <option value="reviews">Sort by: Review count</option>
+          <option value="rating">Sort by: Rating</option>
+        </select>
+      </div>
+
+      <div className="card" style={{ marginTop: 12 }}>
+        <div className="row">
+          <label className="badge">
+            <input type="checkbox" checked={minRating45} onChange={(e) => setMinRating45(e.target.checked)} />
+            4.5★ & up
+          </label>
+
+          <select className="select" value={laceType} onChange={(e) => setLaceType(e.target.value)}>
+            <option value="">Lace type (all)</option>
+            <option value="13x4 frontal">13x4 frontal</option>
+            <option value="13x6 frontal">13x6 frontal</option>
+            <option value="4x4 closure">4x4 closure</option>
+            <option value="5x5 closure">5x5 closure</option>
+            <option value="2x6 closure">2x6 closure</option>
+          </select>
+
+          <select className="select" value={curlPattern} onChange={(e) => setCurlPattern(e.target.value)}>
+            <option value="">Curl pattern (all)</option>
+            <option value="straight">straight</option>
+            <option value="body wave">body wave</option>
+            <option value="loose wave">loose wave</option>
+            <option value="deep wave">deep wave</option>
+            <option value="curly">curly</option>
+            <option value="kinky curly">kinky curly</option>
+          </select>
+
+          <select className="select" value={hairType} onChange={(e) => setHairType(e.target.value)}>
+            <option value="">Hair type (all)</option>
+            <option value="synthetic">synthetic</option>
+            <option value="human blend">human blend</option>
+            <option value="100% human">100% human</option>
+          </select>
+
+          <select className="select" value={color} onChange={(e) => setColor(e.target.value)}>
+            <option value="">Color (all)</option>
+            <option value="black">black</option>
+            <option value="brown">brown</option>
+            <option value="blonde">blonde</option>
+            <option value="colored">colored</option>
+          </select>
         </div>
       </div>
 
-      {status ? (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 12,
-            border: "1px solid rgba(0,0,0,0.12)",
-            background: "rgba(0,0,0,0.03)",
-          }}
-        >
-          {status}
-        </div>
-      ) : null}
-
-      {loading ? (
-        <div style={{ marginTop: 14, opacity: 0.7 }}>Loading…</div>
-      ) : items.length === 0 ? (
-        <div style={{ marginTop: 14, opacity: 0.7 }}>
-          No listings yet. Vendors can add products in their dashboard.
-        </div>
-      ) : (
-        <section
-          style={{
-            marginTop: 16,
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-            gap: 14,
-          }}
-        >
-          {items.map((it) => {
-            const cover =
-              (it.listing_images || [])
-                .slice()
-                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))[0]
-                ?.image_url || "";
-
-            return (
-              <Link
-                key={it.id}
-                href={`/shop/${it.id}`}
-                style={{
-                  textDecoration: "none",
-                  color: "inherit",
-                  border: "1px solid rgba(0,0,0,0.10)",
-                  borderRadius: 14,
-                  overflow: "hidden",
-                  display: "grid",
-                }}
-              >
-                <div style={{ height: 220, background: "rgba(0,0,0,0.03)" }}>
-                  {cover ? (
-                    <img
-                      src={cover}
-                      alt={it.title}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        height: "100%",
-                        display: "grid",
-                        placeItems: "center",
-                        opacity: 0.6,
-                      }}
-                    >
-                      No image
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ padding: 12, display: "grid", gap: 6 }}>
-                  <div style={{ fontWeight: 800 }}>{it.title}</div>
-                  <div style={{ opacity: 0.75, fontSize: 13 }}>
-                    {formatMoney(it.price_cents, it.currency)}
-                  </div>
-                </div>
-              </Link>
-            );
-          })}
-        </section>
-      )}
+      <div className="grid" style={{ marginTop: 14 }}>
+        {sorted.map((p) => (
+          <a key={p.id} className="card" href={`/shop/${p.slug}`}>
+            <h3 style={{ margin: "6px 0" }}>{p.name}</h3>
+            <div className="row" style={{ gap: 8 }}>
+              <span className="badge">${(p.priceCents / 100).toFixed(2)}</span>
+              <span className="badge">{p.rating}★</span>
+              <span className="badge">{p.reviewCount} reviews</span>
+            </div>
+            <p style={{ color: "var(--muted)" }}>
+              {p.laceType} · {p.curlPattern} · {p.hairType} · {p.color}
+            </p>
+          </a>
+        ))}
+      </div>
     </main>
   );
 }
