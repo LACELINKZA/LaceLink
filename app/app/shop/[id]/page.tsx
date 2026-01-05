@@ -1,365 +1,486 @@
-import Image from "next/image";
+"use client";
+
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 
-// ✅ Vercel/Next types in your logs expect params to behave like a Promise
-type PageProps = {
-  params: Promise<{ id: string }>;
-};
-
-type Product = {
+type Listing = {
   id: string;
-  name: string;
-  description?: string | null;
+  vendor_id: string;
+  title: string;
+  description: string | null;
   price_cents: number;
-  currency?: string | null;
-  image_url?: string | null;
-  in_stock?: boolean | null;
-  category?: string | null;
+  currency: string;
+  is_active: boolean;
 };
 
-// ---------- helpers ----------
-function formatMoney(priceCents: number, currency: string = "USD") {
+type ListingImage = {
+  id: string;
+  image_url: string;
+  sort_order: number;
+  created_at?: string;
+};
+
+function dollarsToCents(v: string) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 100);
+}
+
+function centsToDollars(cents: number) {
+  return (cents / 100).toFixed(2);
+}
+
+function formatMoney(cents: number, currency: string) {
   try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-    }).format(priceCents / 100);
+    return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(
+      cents / 100
+    );
   } catch {
-    return `$${(priceCents / 100).toFixed(2)}`;
+    return `$${(cents / 100).toFixed(2)}`;
   }
 }
 
-function safeStr(v: unknown) {
-  return typeof v === "string" ? v : "";
-}
+export default function EditListingPage() {
+  const router = useRouter();
+  const params = useParams<{ id: string }>();
+  const listingId = params?.id;
 
-// ✅ demo fallback data so build never fails if DB isn't ready
-const DEMO_PRODUCTS: Product[] = [
-  {
-    id: "lace-closure-18",
-    name: "Lace Closure Wig (18\")",
-    description:
-      "Soft, beginner-friendly lace closure unit. Natural hairline look with easy install.",
-    price_cents: 18900,
-    currency: "USD",
-    image_url:
-      "https://images.unsplash.com/photo-1520975916090-3105956dac38?auto=format&fit=crop&w=1200&q=80",
-    in_stock: true,
-    category: "Wigs",
-  },
-  {
-    id: "hd-lace-frontal-20",
-    name: "HD Lace Frontal Wig (20\")",
-    description:
-      "HD lace frontal for a melt-down finish. Great for glueless installs and styling.",
-    price_cents: 24900,
-    currency: "USD",
-    image_url:
-      "https://images.unsplash.com/photo-1520975958221-b96f4f5481a3?auto=format&fit=crop&w=1200&q=80",
-    in_stock: true,
-    category: "Wigs",
-  },
-];
+  const [listing, setListing] = useState<Listing | null>(null);
+  const [images, setImages] = useState<ListingImage[]>([]);
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(true);
 
-// ---------- data fetching ----------
-// This tries Supabase if env vars exist; otherwise it uses demo data.
-// IMPORTANT: This file runs on the server (safe for secrets).
-async function getProductById(id: string): Promise<Product | null> {
-  // If you have Supabase set up, these env vars should exist:
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // form state
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [price, setPrice] = useState("0.00");
+  const [currency, setCurrency] = useState("USD");
+  const [isActive, setIsActive] = useState(true);
 
-  // If not configured yet, fall back to demo data:
-  if (!supabaseUrl || !serviceRoleKey) {
-    return DEMO_PRODUCTS.find((p) => p.id === id) ?? null;
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const coverUrl = useMemo(() => images?.[0]?.image_url || "", [images]);
+
+  async function loadAll() {
+    if (!listingId) return;
+
+    setLoading(true);
+    setStatus("");
+
+    const {
+      data: { user },
+      error: userErr,
+    } = await supabase.auth.getUser();
+
+    if (userErr) {
+      setStatus(userErr.message);
+      setLoading(false);
+      return;
+    }
+
+    if (!user) {
+      setStatus("Please sign in to edit listings.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: l, error: lErr } = await supabase
+      .from("listings")
+      .select("id, vendor_id, title, description, price_cents, currency, is_active")
+      .eq("id", listingId)
+      .maybeSingle();
+
+    if (lErr) {
+      setStatus(lErr.message);
+      setLoading(false);
+      return;
+    }
+
+    if (!l) {
+      setStatus("Listing not found.");
+      setLoading(false);
+      return;
+    }
+
+    // Ensure only owner can edit (RLS should enforce too, but this is a better UX)
+    if (l.vendor_id !== user.id) {
+      setStatus("You don’t have permission to edit this listing.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: imgs, error: imgErr } = await supabase
+      .from("listing_images")
+      .select("id, image_url, sort_order, created_at")
+      .eq("listing_id", listingId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (imgErr) {
+      setStatus(imgErr.message);
+      setLoading(false);
+      return;
+    }
+
+    setListing(l as Listing);
+    setImages((imgs as ListingImage[]) ?? []);
+
+    setTitle(l.title ?? "");
+    setDescription(l.description ?? "");
+    setPrice(centsToDollars(l.price_cents ?? 0));
+    setCurrency(l.currency ?? "USD");
+    setIsActive(!!l.is_active);
+
+    setLoading(false);
   }
 
-  // Lazy import so builds don't fail if you haven't installed it yet
-  // (but if you DO use DB, you should install: npm i @supabase/supabase-js)
-  const { createClient } = await import("@supabase/supabase-js");
+  useEffect(() => {
+    if (!listingId) return;
+    loadAll();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listingId]);
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
+  async function saveChanges() {
+    if (!listingId || !listing) return;
 
-  // ✅ Expected table name: "products"
-  // Columns expected: id, name, description, price_cents, currency, image_url, in_stock, category
-  const { data, error } = await supabase
-    .from("products")
-    .select(
-      "id, name, description, price_cents, currency, image_url, in_stock, category"
-    )
-    .eq("id", id)
-    .maybeSingle();
+    setSaving(true);
+    setStatus("");
 
-  if (error) {
-    // If your DB isn't ready yet, don't crash builds — just fallback.
-    return DEMO_PRODUCTS.find((p) => p.id === id) ?? null;
+    const price_cents = dollarsToCents(price);
+
+    if (!title.trim()) {
+      setStatus("Title is required.");
+      setSaving(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from("listings")
+      .update({
+        title: title.trim(),
+        description: description.trim() || null,
+        price_cents,
+        currency,
+        is_active: isActive,
+      })
+      .eq("id", listingId);
+
+    if (error) {
+      setStatus(error.message);
+      setSaving(false);
+      return;
+    }
+
+    setStatus("Saved ✅");
+    setSaving(false);
   }
 
-  return (data as Product) ?? null;
-}
+  async function uploadImages(fileList: FileList | null) {
+    if (!listingId || !fileList || fileList.length === 0) return;
 
-async function getRelatedProducts(currentId: string): Promise<Product[]> {
-  // simple related list: demo items other than current
-  return DEMO_PRODUCTS.filter((p) => p.id !== currentId).slice(0, 4);
-}
+    setUploading(true);
+    setStatus("");
 
-// ---------- UI ----------
-export default async function ProductDetailPage({ params }: PageProps) {
-  const { id } = await params;
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  const product = await getProductById(id);
+    if (!user) {
+      setStatus("Please sign in.");
+      setUploading(false);
+      return;
+    }
 
-  if (!product) notFound();
+    // Upload each file and then save its public URL to listing_images table
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const safeName = file.name.replace(/\s+/g, "-").toLowerCase();
+      const path = `${user.id}/${listingId}/${Date.now()}-${safeName}`;
 
-  const currency = product.currency ?? "USD";
-  const price = formatMoney(product.price_cents, currency);
-  const inStock = product.in_stock ?? true;
-  const related = await getRelatedProducts(product.id);
+      const { error: upErr } = await supabase.storage
+        .from("listing-images")
+        .upload(path, file, { upsert: false });
+
+      if (upErr) {
+        setStatus(upErr.message);
+        setUploading(false);
+        return;
+      }
+
+      const { data: publicData } = supabase.storage
+        .from("listing-images")
+        .getPublicUrl(path);
+
+      const publicUrl = publicData.publicUrl;
+
+      const nextSort = images.length + i;
+
+      const { error: insErr } = await supabase.from("listing_images").insert({
+        listing_id: listingId,
+        image_url: publicUrl,
+        sort_order: nextSort,
+      });
+
+      if (insErr) {
+        setStatus(insErr.message);
+        setUploading(false);
+        return;
+      }
+    }
+
+    setStatus("Uploaded ✅");
+    setUploading(false);
+    await loadAll();
+  }
+
+  async function removeImage(imageId: string) {
+    const ok = confirm("Remove this image?");
+    if (!ok) return;
+
+    setStatus("");
+
+    const { error } = await supabase
+      .from("listing_images")
+      .delete()
+      .eq("id", imageId);
+
+    if (error) {
+      setStatus(error.message);
+      return;
+    }
+
+    setImages((prev) => prev.filter((img) => img.id !== imageId));
+    setStatus("Image removed ✅");
+  }
+
+  if (loading) {
+    return (
+      <main style={{ maxWidth: 900, margin: "0 auto", padding: 24, opacity: 0.7 }}>
+        Loading…
+      </main>
+    );
+  }
 
   return (
-    <main style={styles.page}>
-      <div style={styles.topNav}>
-        <Link href="/shop" style={styles.backLink}>
-          ← Back to Shop
-        </Link>
+    <main style={{ maxWidth: 900, margin: "0 auto", padding: 24 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <h1 style={{ margin: 0 }}>Edit Listing</h1>
+
+        <div style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
+          <Link href="/vendor/listings">← Back</Link>
+          <button
+            onClick={() => router.push(`/shop/${listingId}`)}
+            style={ghostButton}
+          >
+            View Public
+          </button>
+        </div>
       </div>
 
-      <section style={styles.grid}>
-        <div style={styles.imageCard}>
-          {product.image_url ? (
-            <div style={styles.imageWrap}>
-              <Image
-                src={product.image_url}
-                alt={safeStr(product.name) || "Product image"}
-                fill
-                sizes="(max-width: 900px) 100vw, 50vw"
-                style={{ objectFit: "cover" }}
-                priority
-              />
-            </div>
+      {status ? <div style={statusBox}>{status}</div> : null}
+
+      <section style={{ marginTop: 16, display: "grid", gap: 12 }}>
+        <div style={coverBox}>
+          {coverUrl ? (
+            <img
+              src={coverUrl}
+              alt="Cover"
+              style={{ width: "100%", height: 320, objectFit: "cover" }}
+            />
           ) : (
-            <div style={styles.imagePlaceholder}>No image</div>
+            <div style={noCover}>No images yet</div>
           )}
         </div>
 
-        <div style={styles.info}>
-          {product.category ? (
-            <div style={styles.badge}>{product.category}</div>
-          ) : null}
+        <div style={{ display: "grid", gap: 12 }}>
+          <label style={label}>
+            Title
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              style={inputStyle}
+            />
+          </label>
 
-          <h1 style={styles.title}>{product.name}</h1>
+          <label style={label}>
+            Description
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={6}
+              style={textareaStyle}
+            />
+          </label>
 
-          <div style={styles.priceRow}>
-            <div style={styles.price}>{price}</div>
-            <div style={{ ...styles.stock, opacity: inStock ? 1 : 0.65 }}>
-              {inStock ? "In stock" : "Out of stock"}
-            </div>
-          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <label style={label}>
+              Price
+              <input
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                inputMode="decimal"
+                style={inputStyle}
+              />
+              <div style={{ fontSize: 13, opacity: 0.75, marginTop: 6 }}>
+                Preview: {formatMoney(dollarsToCents(price), currency)}
+              </div>
+            </label>
 
-          {product.description ? (
-            <p style={styles.desc}>{product.description}</p>
-          ) : (
-            <p style={styles.descMuted}>
-              No description yet. (You can add one in your products table.)
-            </p>
-          )}
-
-          <div style={styles.actions}>
-            {/* Quantity selector (clientless, basic) */}
-            <form action="/api/cart/add" method="POST" style={styles.form}>
-              <input type="hidden" name="product_id" value={product.id} />
-              <label style={styles.label}>
-                Quantity
-                <input
-                  name="qty"
-                  type="number"
-                  min={1}
-                  defaultValue={1}
-                  style={styles.qty}
-                />
-              </label>
-
-              <button
-                type="submit"
-                disabled={!inStock}
-                style={{
-                  ...styles.buttonPrimary,
-                  opacity: inStock ? 1 : 0.6,
-                  cursor: inStock ? "pointer" : "not-allowed",
-                }}
+            <label style={label}>
+              Currency
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                style={inputStyle}
               >
-                Add to Cart
-              </button>
-            </form>
-
-            {/* Buy Now (calls your checkout route if you have it) */}
-            <form action="/api/checkout" method="POST" style={styles.form}>
-              <input type="hidden" name="product_id" value={product.id} />
-              <input type="hidden" name="qty" value="1" />
-              <button
-                type="submit"
-                disabled={!inStock}
-                style={{
-                  ...styles.buttonSecondary,
-                  opacity: inStock ? 1 : 0.6,
-                  cursor: inStock ? "pointer" : "not-allowed",
-                }}
-              >
-                Buy Now
-              </button>
-            </form>
+                <option value="USD">USD</option>
+                <option value="CAD">CAD</option>
+                <option value="GBP">GBP</option>
+                <option value="EUR">EUR</option>
+              </select>
+            </label>
           </div>
 
-          <div style={styles.meta}>
-            <div>
-              <strong>Product ID:</strong> {product.id}
-            </div>
-            <div>
-              <strong>Currency:</strong> {currency}
-            </div>
-          </div>
+          <label style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <input
+              type="checkbox"
+              checked={isActive}
+              onChange={(e) => setIsActive(e.target.checked)}
+            />
+            Active (visible in shop)
+          </label>
 
-          <div style={styles.note}>
-            Tip: this page won’t break builds even if Supabase isn’t set up yet.
-            When your DB is ready, just ensure you have:
-            <ul style={styles.ul}>
-              <li>NEXT_PUBLIC_SUPABASE_URL</li>
-              <li>SUPABASE_SERVICE_ROLE_KEY</li>
-              <li>Table: products</li>
-            </ul>
-          </div>
+          <button
+            onClick={saveChanges}
+            disabled={saving}
+            style={{
+              ...buttonStyle,
+              opacity: saving ? 0.7 : 1,
+              cursor: saving ? "not-allowed" : "pointer",
+            }}
+          >
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
         </div>
       </section>
 
-      <section style={styles.relatedSection}>
-        <h2 style={styles.relatedTitle}>You may also like</h2>
-        <div style={styles.relatedGrid}>
-          {related.map((p) => (
-            <Link key={p.id} href={`/shop/${p.id}`} style={styles.relatedCard}>
-              <div style={styles.relatedName}>{p.name}</div>
-              <div style={styles.relatedPrice}>
-                {formatMoney(p.price_cents, p.currency ?? "USD")}
-              </div>
-            </Link>
-          ))}
+      <section style={{ marginTop: 22 }}>
+        <h2 style={{ margin: "0 0 10px" }}>Photos</h2>
+
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ display: "grid", gap: 6 }}>
+            Upload images
+            <input
+              type="file"
+              multiple
+              accept="image/*"
+              disabled={uploading}
+              onChange={(e) => uploadImages(e.target.files)}
+            />
+          </label>
+
+          {uploading ? <div style={{ opacity: 0.7 }}>Uploading…</div> : null}
         </div>
+
+        {images.length > 0 ? (
+          <div style={imageGrid}>
+            {images.map((img) => (
+              <div key={img.id} style={imageCard}>
+                <img
+                  src={img.image_url}
+                  alt="Listing"
+                  style={{ width: "100%", height: 150, objectFit: "cover", borderRadius: 12 }}
+                />
+                <button onClick={() => removeImage(img.id)} style={smallButton}>
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ marginTop: 12, opacity: 0.7 }}>
+            No images yet. Upload at least 1 photo to make the listing look real.
+          </div>
+        )}
       </section>
     </main>
   );
 }
 
-// ---------- inline styles (no extra dependencies) ----------
-const styles: Record<string, React.CSSProperties> = {
-  page: {
-    maxWidth: 1100,
-    margin: "0 auto",
-    padding: "24px 16px 48px",
-  },
-  topNav: { marginBottom: 16 },
-  backLink: {
-    textDecoration: "none",
-    fontSize: 14,
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "1fr",
-    gap: 18,
-  },
-  imageCard: {
-    border: "1px solid rgba(0,0,0,0.08)",
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  imageWrap: {
-    position: "relative",
-    width: "100%",
-    aspectRatio: "1 / 1",
-  },
-  imagePlaceholder: {
-    display: "grid",
-    placeItems: "center",
-    height: 420,
-    opacity: 0.6,
-  },
-  info: {
-    border: "1px solid rgba(0,0,0,0.08)",
-    borderRadius: 14,
-    padding: 16,
-  },
-  badge: {
-    display: "inline-block",
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(0,0,0,0.12)",
-    fontSize: 12,
-    marginBottom: 10,
-  },
-  title: { fontSize: 28, lineHeight: 1.15, margin: "6px 0 12px" },
-  priceRow: {
-    display: "flex",
-    alignItems: "baseline",
-    justifyContent: "space-between",
-    gap: 10,
-    marginBottom: 12,
-  },
-  price: { fontSize: 22, fontWeight: 700 },
-  stock: { fontSize: 13 },
-  desc: { opacity: 0.9, marginBottom: 18, lineHeight: 1.55 },
-  descMuted: { opacity: 0.6, marginBottom: 18, lineHeight: 1.55 },
-  actions: { display: "grid", gap: 10, marginBottom: 16 },
-  form: { display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" },
-  label: { display: "flex", gap: 8, alignItems: "center", fontSize: 14 },
-  qty: {
-    width: 80,
-    padding: "10px 12px",
-    borderRadius: 10,
-    border: "1px solid rgba(0,0,0,0.15)",
-  },
-  buttonPrimary: {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(0,0,0,0.15)",
-    fontWeight: 600,
-  },
-  buttonSecondary: {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(0,0,0,0.15)",
-    fontWeight: 600,
-  },
-  meta: { fontSize: 13, opacity: 0.75, display: "grid", gap: 6 },
-  note: {
-    marginTop: 16,
-    fontSize: 13,
-    opacity: 0.8,
-    borderTop: "1px solid rgba(0,0,0,0.08)",
-    paddingTop: 12,
-  },
-  ul: { marginTop: 8, marginBottom: 0 },
-  relatedSection: { marginTop: 28 },
-  relatedTitle: { fontSize: 18, marginBottom: 10 },
-  relatedGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-    gap: 12,
-  },
-  relatedCard: {
-    textDecoration: "none",
-    border: "1px solid rgba(0,0,0,0.08)",
-    borderRadius: 14,
-    padding: 14,
-    display: "grid",
-    gap: 6,
-  },
-  relatedName: { fontWeight: 600 },
-  relatedPrice: { opacity: 0.75, fontSize: 13 },
+const statusBox: React.CSSProperties = {
+  marginTop: 12,
+  padding: 12,
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.12)",
+  background: "rgba(0,0,0,0.03)",
 };
 
-// Make the grid 2-column on wider screens (simple responsive)
-styles.grid = {
-  ...styles.grid,
-  gridTemplateColumns: "1fr",
-} as React.CSSProperties;
+const label: React.CSSProperties = { display: "grid", gap: 6 };
+
+const inputStyle: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.15)",
+};
+
+const textareaStyle: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.15)",
+  resize: "vertical",
+};
+
+const buttonStyle: React.CSSProperties = {
+  padding: "12px 14px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.15)",
+  fontWeight: 800,
+};
+
+const ghostButton: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.15)",
+  background: "transparent",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const coverBox: React.CSSProperties = {
+  border: "1px solid rgba(0,0,0,0.12)",
+  borderRadius: 14,
+  overflow: "hidden",
+};
+
+const noCover: React.CSSProperties = {
+  height: 320,
+  display: "grid",
+  placeItems: "center",
+  opacity: 0.6,
+};
+
+const imageGrid: React.CSSProperties = {
+  marginTop: 14,
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+  gap: 12,
+};
+
+const imageCard: React.CSSProperties = {
+  border: "1px solid rgba(0,0,0,0.12)",
+  borderRadius: 14,
+  padding: 10,
+  display: "grid",
+  gap: 10,
+};
+
+const smallButton: React.CSSProperties = {
+  padding: "10px 12px",
+  borderRadius: 12,
+  border: "1px solid rgba(0,0,0,0.15)",
+  cursor: "pointer",
+  fontWeight: 800,
+};
